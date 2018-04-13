@@ -12,12 +12,12 @@ def get_matching_peaks(deltas, n_est=100):
     t = 1.05 * np.max(np.abs(fit_error[0:n_est])) # max error in fitted points plus 5% tolerance
     return deltas[0 : np.argmax(fit_error > t)] # find first value above error tolerance, and stop
 
-def process_node(ref_spec, comp_spec, n_peaks=500):
+def process_node(ref_spec, comp_spec, n_peaks=500, ppm=True):
     ii, s0 = ref_spec
     edges = []
     for jj, s1 in comp_spec:
-        v = estimate_linear_shift(s0, s1, n_peaks)
-        if v > 0:
+        v = estimate_linear_shift(s0, s1, n_peaks, ppm=ppm)
+        if v < 0:
             edges.append((str(ii), str(jj), {'weight': np.abs(v)}))
         else:
             edges.append((str(jj), str(ii), {'weight': np.abs(v)}))
@@ -55,12 +55,12 @@ def write_graphml(fname, G):
     nx.write_graphml(G, fname)
 
 
-def create_mass_shift_graph(imzml_fn, num_cores=2):
+def create_mass_shift_graph(imzml_fn, num_cores=2, ppm=True):
     # load imzml
     imzml = ImzmlDataset(imzml_fn)
     # calculate mass shift per spectrum
     edges = Parallel(n_jobs=num_cores)(
-        delayed(process_node)(*get_adjacent_spectra(ii, imzml)) for ii in np.arange(len(imzml.coordinates)))
+        delayed(process_node)(*get_adjacent_spectra(ii, imzml), ppm=ppm) for ii in np.arange(len(imzml.coordinates)))
     # format as a graph
     graph = format_graph(imzml, edges)
     return graph

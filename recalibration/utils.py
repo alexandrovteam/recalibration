@@ -40,9 +40,9 @@ def get_deltas_mix(target, reference, ppm=True):
     """
     target, reference = map(lambda x: np.asarray(x).T, [target, reference])
     dmz = np.abs(target[:, 0][:, np.newaxis] - reference[:,0])
-    ix0 = np.arange(dmz.shape[1])
+    ix0 = np.arange(dmz.shape[0])
     ix1 = np.argmin(dmz, axis=1)
-    ix2 = np.arange(dmz.shape[0])
+    ix2 = np.arange(dmz.shape[1])
     ix3 = np.argmin(dmz, axis=0)
     matchix = set((x,y) for x,y in zip(ix2,ix3)) & set((x,y) for x,y in zip(ix1, ix0))
     m1 = np.asarray([target[m[1],0] for m in matchix])

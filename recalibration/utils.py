@@ -88,4 +88,4 @@ def estimate_linear_shift(s1, s2, n=None, ppm=True):
     v1, v2 = [get_top_peaks(*s, n) for s in [s1, s2]]
     deltas = get_deltas_mix(v1, v2, ppm=ppm)
     deltas = np.sort(deltas[~np.isnan(deltas)])
-    return -np.percentile(deltas, [15, 85])[np.argmax([0, np.median(deltas)])]
+    return -np.percentile(deltas, [25, 75])[np.argmax([0, np.median(deltas)])]

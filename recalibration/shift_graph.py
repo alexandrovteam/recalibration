@@ -12,7 +12,7 @@ def get_matching_peaks(deltas, n_est=100):
     t = 1.05 * np.max(np.abs(fit_error[0:n_est])) # max error in fitted points plus 5% tolerance
     return deltas[0 : np.argmax(fit_error > t)] # find first value above error tolerance, and stop
 
-def process_node(ref_spec, comp_spec, n_peaks=500, ppm=True):
+def process_node(ref_spec, comp_spec, n_peaks=1000, ppm=True):
     ii, s0 = ref_spec
     edges = []
     for jj, s1 in comp_spec:

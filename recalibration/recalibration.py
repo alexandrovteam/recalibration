@@ -31,7 +31,7 @@ def fit_spectrum(mzs, intensities, ref_mzs, ref_pcts, max_delta_ppm, mz_min, mz_
 
     mzs, intensities = map(lambda x: x[intensities>intensity_threshold], [mzs, intensities])
 
-    delta = utils.get_deltas_mix(mzs, ref_mzs,  ppm=True)
+    delta = -utils.get_deltas_mix(mzs, ref_mzs,  ppm=True)
     delta[np.abs(delta) > max_delta_ppm] = np.nan
 
     ref_mzs, ref_pcts, delta = map(lambda x:x[~np.isnan(delta)], [ref_mzs, ref_pcts, delta])
@@ -47,7 +47,7 @@ def fit_spectrum(mzs, intensities, ref_mzs, ref_pcts, max_delta_ppm, mz_min, mz_
             ref_pct = 1
         for ii in np.arange(ref_pct):
             _x.append(ref_mz)
-            _y.append(-dt)
+            _y.append(dt)
     _x, _y = map(np.asarray, (_x, _y))
     _r = least_squares(lsfunc, x0, loss='soft_l1', f_scale=0.5, args=(_x, _y))
     return _r, (_x, _y)

@@ -31,9 +31,10 @@ def get_adjacent_spectra(ii, imzml):
     ref_spec = ii, imzml.get_spectrum(ii)
     comp_spec = []
     c = imzml.coordinates[ii]
+    z = imzml.coordinates[0][2]
     for i, j in zip([c[0], c[0]+1], [c[1]+1, c[1]]):
         try:
-            jj = np.where(np.sum(imzml.coordinates == [i,j,1], axis=1) == 3)[0][0]
+            jj = np.where(np.sum(imzml.coordinates == [i,j,z], axis=1) == 3)[0][0]
         except IndexError as e:
             #([i,j,1], e)
             continue

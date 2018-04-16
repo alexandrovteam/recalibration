@@ -6,7 +6,7 @@ def get_mz(ion, charge):
     f = FTICR(resolving_power = 300000, at_mz=400)
     return f.get_principal_peak(ion, charge)
 
-def get_reference_mzs(polarity, tissue_type="", source="", database='HMDB', fdr = 0.1, config={}):
+def get_reference_mzs(polarity, tissue_type="", source="", database='HMDB', fdr = 0.1, config={}, min_count=0):
     esclient = Elasticsearch("http://{}:{}@metaspace2020.eu:9210".format(config['user'], config['password']), timeout=100)
     assert polarity in ['Positive', 'Negative']
     charge = 1
@@ -57,9 +57,10 @@ def get_reference_mzs(polarity, tissue_type="", source="", database='HMDB', fdr 
     )
     count = pd.Series(
             {bucket["key"]: bucket["doc_count"] for bucket in response['aggregations']['sf_adduct']['buckets']}
-        ).sort_values(ascending=False)*100/len(response['aggregations']["ds_id"]["buckets"])
+        ).sort_values(ascending=False)*100./len(response['aggregations']["ds_id"]["buckets"])
     mzs = pd.Series({ion: get_mz(ion, charge) for ion in count.index}).loc[count.index]
     mzs.rename('mz', inplace=True)
     count.rename('count', inplace=True)
+    count += min_count
     return mzs, count
 

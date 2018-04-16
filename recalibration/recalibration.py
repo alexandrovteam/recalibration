@@ -69,6 +69,9 @@ def get_shift_model(mzs, ints, ref_mzs, max_delta_ppm=30, x0=(0,0,0), stabilise=
         import matplotlib.pyplot as plt
         shifts = poly(r.x, mzs)
         plt.figure()
+        _x = utils.select_peaks(mzs, ints, max_per_chunk=1, bins=np.arange(mzs[0], mzs[-1], 0.1))[0]
+        plt.scatter(_x, np.zeros(len(_x)), label='data point', alpha=0.8)
+        plt.scatter(ref_mzs['mz'].values, np.zeros(len(ref_mzs['mz'].values)), label='ref_mzs', alpha=0.6)
         plt.scatter(data[0], data[1], label='exp')
         plt.plot(mzs, shifts, label='fit')
         plt.legend()

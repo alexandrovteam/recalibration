@@ -29,16 +29,15 @@ def lsfunc(x, t, y):
 def fit_spectrum(mzs, intensities, ref_mzs, ref_pcts, max_delta_ppm, mz_min, mz_max, x0=(1, 1, 1),
                  weight_by_occurance=True, stabilise=True, intensity_threshold=0, ppm_flag=True):
     mzs, intensities = map(lambda x: x[intensities>intensity_threshold], [mzs, intensities])
-    mzs, intensities = map(lambda x: x[mzs > mz_min], [intensities, mzs])
-    mzs, intensities = map(lambda x: x[mzs < mz_max], [intensities, mzs])
-    ref_mzs, ref_pcts = map(lambda x: x[ref_mzs > mz_min], [ref_pcts, ref_mzs])
-    ref_mzs, ref_pcts = map(lambda x: x[ref_mzs < mz_max], [ref_pcts, ref_mzs])
+    intensities, mzs = map(lambda x: x[mzs > mz_min], [intensities, mzs])
+    intensities, mzs  = map(lambda x: x[mzs < mz_max], [intensities, mzs])
+    ref_pcts, ref_mzs  = map(lambda x: x[ref_mzs > mz_min], [ref_pcts, ref_mzs])
+    ref_pcts, ref_mzs = map(lambda x: x[ref_mzs < mz_max], [ref_pcts, ref_mzs])
 
     delta = -utils.get_deltas_mix((mzs, intensities), (ref_mzs, ref_pcts),  ppm=ppm_flag)
     delta[np.abs(delta) > max_delta_ppm] = np.nan
 
     ref_mzs, ref_pcts, delta = map(lambda x:x[~np.isnan(delta)], [ref_mzs, ref_pcts, delta])
-
     _x = []
     _y = []
     if stabilise is not None:
@@ -70,16 +69,16 @@ def get_shift_model(mzs, ints, ref_mzs, max_delta_ppm=30, x0=(0,0,0), stabilise=
         shifts = poly(r.x, mzs)
         plt.figure()
         _x = utils.select_peaks(mzs, ints, max_per_chunk=1, bins=np.arange(mzs[0], mzs[-1], 0.1))[0]
-        plt.scatter(_x, np.zeros(len(_x)), label='data point', alpha=0.8)
-        plt.scatter(ref_mzs['mz'].values, np.zeros(len(ref_mzs['mz'].values)), label='ref_mzs', alpha=0.6)
-        plt.scatter(data[0], data[1], label='exp')
-        plt.plot(mzs, shifts, label='fit')
+        plt.scatter(_x, np.zeros(len(_x)), label='mean spectrum', alpha=0.8)
+        plt.scatter(ref_mzs['mz'].values, np.zeros(len(ref_mzs['mz'].values)), label='reference', alpha=0.6)
+        plt.scatter(data[0], data[1], label='matched')
+        plt.plot(mzs, shifts, label='fitted error')
         plt.legend()
         plt.show()
     if ppm_flag:
-        return lambda x: poly(r.x, x)*1e-6*x
+        return lambda x: poly(r.x, x)*1e-6*x, data, r.x
     else:
-        return lambda x: poly(r.x, x)
+        return lambda x: poly(r.x, x), data, r.x
 
 def mean_spectrum_aligned(imzml):
     mzs, _ = map(np.asarray, imzml.getspectrum(0))
@@ -90,13 +89,23 @@ def mean_spectrum_aligned(imzml):
     return mzs, intensities / float(ii)
 
 
-def recalibrate(aligned_fn, clustered_fn, imzml_out_fn, ref_mzs, max_delta=30, x0 = (0,0,0), stabilise=1, ppm_flag=True, plot=False):
+def recalibrate(aligned_fn, clustered_fn, imzml_out_fn, ref_mzs, max_delta=30, x0 = (0,0,0),
+                stabilise=1, ppm_flag=True, plot=False, dump_fn=None):
     aligned_imzml = ImzMLParser.ImzMLParser(aligned_fn)
     clustered_imzml = ImzMLParser.ImzMLParser(clustered_fn)
     ms_mzs, ms_ints = mean_spectrum_aligned(clustered_imzml)
-    shift_model = get_shift_model(ms_mzs, ms_ints, ref_mzs, x0 = x0,
+    shift_model, data, p = get_shift_model(ms_mzs, ms_ints, ref_mzs, x0 = x0,
                              ppm_flag=ppm_flag, max_delta_ppm=max_delta,
                              plot=plot, stabilise=stabilise)
+    if not dump_fn is None:
+        dump_var = {
+            "ref": [ref_mzs['mz'], ref_mzs['count']],
+            "aligned_mean_spec": [ms_mzs, ms_ints],
+            "cal_points": [data[0], data[1]],
+            "polyfit": p
+        }
+        import pickle
+        pickle.dump(dump_var, open(dump_fn, 'wb'))
     with ImzMLWriter.ImzMLWriter(imzml_out_fn) as imzml_out:
         for ii, c in enumerate(aligned_imzml.coordinates):
             mzs, counts = map(np.asarray, aligned_imzml.getspectrum(ii))
@@ -171,7 +180,7 @@ def cluster(imzml_fn, imzml_out_fn, imzb_fn = "./tmp.imzb", cluster_ppm = 0.2):
             imzml_out.addSpectrum(centroid_mzs, counts[1::2], coords=(c[0], c[1], 1))
     print(ii)
 
-def pipeline(imzml_fn, imzml_recal_fn, config, metadata, tmp_fn = "tmp.imzML", ppm_flag=True, align_flag=True):
+def pipeline(imzml_fn, imzml_recal_fn, config, metadata, tmp_fn = "tmp.imzML", ppm_flag=True, align_flag=True, dump_fn=None):
 #    config = json.load(open('../metaspace_es_config.json'))
     if align_flag:
         align(imzml_fn, tmp_fn, ppm_flag)
@@ -186,11 +195,13 @@ def pipeline(imzml_fn, imzml_recal_fn, config, metadata, tmp_fn = "tmp.imzML", p
                               source=metadata['source'], database=metadata['database'],
                               fdr = 0.1, config=config, min_count=5)
         , axis=1)
+    print("number of reference peaks: ", ref_mzs.shape)
     align_fn = tmp_fn
     cluster_fn = tmp_fn.replace(".imzML", "_cl.imzML")
     recalibrate(align_fn, cluster_fn, imzml_recal_fn, ref_mzs,
-                          ppm_flag=True,
-                          max_delta=30,
-                          x0=(0,0,0),
-                          stabilise=1,
-                          )
+                ppm_flag=True,
+                max_delta=30,
+                x0=(0,0,0),
+                stabilise=1,
+                dump_fn=dump_fn
+                )

@@ -24,7 +24,6 @@ def get_reference_mzs(polarity, tissue_type="", source="", database='HMDB', fdr 
 
     if source != "":
         filter += [{"term": {"ds_meta.MS_Analysis.Ionisation_Source": source}},]
-    print(filter)
     response = esclient.search(
         index='sm-*',
         body={

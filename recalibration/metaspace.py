@@ -63,3 +63,8 @@ def get_reference_mzs(polarity, tissue_type="", source="", database='HMDB', fdr 
     count += min_count
     return mzs, count
 
+def format_metadata(md):
+    return {"polarity": md["MS_Analysis"]['Polarity'],
+                "organ": md["Sample_Information"]['Organism_Part'],
+                "source": md["MS_Analysis"]['Ionisation_Source'],
+                "database": "HMDB"}

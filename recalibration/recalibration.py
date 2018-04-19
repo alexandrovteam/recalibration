@@ -45,7 +45,6 @@ def fit_spectrum(mzs, intensities, ref_mzs, ref_pcts, max_delta_ppm, mz_min, mz_
             _x.extend([mz_min,mz_max])
             _y.extend([0, 0])
 
-
     for ref_mz, ref_pct, dt in zip(ref_mzs, ref_pcts.astype('int'), delta):
         if not weight_by_occurance:
             ref_pct = 1

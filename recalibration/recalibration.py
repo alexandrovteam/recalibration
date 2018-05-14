@@ -65,13 +65,14 @@ def get_shift_model(mzs, ints, ref_mzs, max_delta_ppm=30, x0=(0,0,0), stabilise=
     )
     if plot:
         import matplotlib.pyplot as plt
-        shifts = poly(r.x, mzs)
+        _mzs = np.linspace(mzs.min(), mzs.max(), 200)
+        shifts = poly(r.x, _mzs)
         plt.figure()
         _x = utils.select_peaks(mzs, ints, max_per_chunk=1, bins=np.arange(mzs[0], mzs[-1], 0.1))[0]
         plt.scatter(_x, np.zeros(len(_x)), label='mean spectrum', alpha=0.8)
         plt.scatter(ref_mzs['mz'].values, np.zeros(len(ref_mzs['mz'].values)), label='reference', alpha=0.6)
         plt.scatter(data[0], data[1], label='matched')
-        plt.plot(mzs, shifts, label='fitted error')
+        plt.plot(_mzs, shifts, label='fitted error')
         plt.legend()
         plt.show()
     if ppm_flag:
@@ -117,28 +118,38 @@ def _get_neighbours(graph, node):
     return nodes
 
 
+def get_node_offset(graph, node):
+    weights = []
+    offsets = []
+    for node2 in _get_neighbours(graph, node):
+        offsets.append(graph.nodes[node2]['offset'])
+        try:
+            weights.append(-1 * graph.edges[node2, node]['weight'])
+        except KeyError:
+            weights.append(graph.edges[node, node2]['weight'])
+    av_weight = np.mean(np.asarray(offsets) - np.asarray(weights))
+    return av_weight
+
+
 def calculate_node_offset(graph):
     # Set an offset per node equal to the average of its edges
     # !! will modify in place
     for node in graph.nodes:
-        weights = []
-        offsets = []
-        for node2 in _get_neighbours(graph, node):
-            offsets.append(graph.nodes[node2]['offset'])
-            try:
-                weights.append(-1 * graph.edges[node2, node]['weight'])
-            except KeyError:
-                weights.append(graph.edges[node, node2]['weight'])
-        av_weight = np.mean(np.asarray(offsets) - np.asarray(weights))
+        av_weight = get_node_offset(graph, node)
         graph.nodes[node]['offset'] = float(av_weight)
     return graph
 
+def purge_nan(graph):
+    for node in graph.nodes:
+        graph.nodes[node]['offset'] = np.nan_to_num(graph.nodes[node]['offset'] )
+        return graph
 
 def adjust_graph(graph, reps=750):
         for node in graph.nodes:
             graph.nodes[node].setdefault('offset', 0.)
         for ii in range(reps):
             graph = calculate_node_offset(graph)
+            graph = purge_nan(graph)
         return graph
 
 
@@ -155,23 +166,33 @@ def write_tmp_imzml(graph, imzml_fn, imzml_out_fn, ppm=True ):
             imzml_out.addSpectrum(mzs, counts, coords=(c[0], c[1], 1))
 
 
-def align(imzml_fn, tmp_fn, ppm=True):
+def clip_edges(graph, max_shift):
+    for edge in graph.edges:
+        if graph.edges[edge]['weight'] > max_shift:
+            graph.edges[edge]['weight'] = 0
+            #graph.edges[edge]['weight'] = max_shift
+    return graph
+
+
+def align(imzml_fn, tmp_fn, max_shift=None, ppm=True):
     graph = shift_graph.create_mass_shift_graph(imzml_fn=imzml_fn, num_cores = 6, ppm=ppm)
-    graph = adjust_graph(graph)
+    if not max_shift is None:
+        clip_edges(graph, max_shift)
+    graph = adjust_graph(graph,)
     write_tmp_imzml(graph, imzml_fn, tmp_fn)
     return graph
 
 
-def cluster(imzml_fn, imzml_out_fn, imzb_fn = "./tmp.imzb", cluster_ppm = 0.2):
+def cluster(imzml_fn, imzml_out_fn, imzb_fn = "./tmp.imzb", cluster_ppm = 0.2, ims_path="ims", frac=0.01):
     # cluster to get m/z axis
-    ret = subprocess.check_call(["/home/palmer/miniconda2/envs/py-sm/bin/ims", "convert", imzml_fn, imzb_fn])
+    imzml = ImzMLParser.ImzMLParser(imzml_fn)
+    ret = subprocess.check_call([ims_path, "convert", imzml_fn, imzb_fn])
     assert ret==0, 'subprocess returned non zero value {}'.format(ret)
     imzb = ImzbReader(imzb_fn)
-    dbscan = imzb.dbscan(eps=lambda mz: mz * cluster_ppm * 1e-6)
+    dbscan = imzb.dbscan(eps=lambda mz: mz * cluster_ppm * 1e-6, minPts=frac*len(imzml.coordinates))
     bins = np.sort(np.concatenate([dbscan.left, dbscan.right]))
     # Rebin and write
     centroid_mzs = dbscan['mean']
-    imzml = ImzMLParser.ImzMLParser(imzml_fn)
     with ImzMLWriter.ImzMLWriter(imzml_out_fn) as imzml_out:
         for ii, c in enumerate(imzml.coordinates):
             mzs, counts = map(np.asarray, imzml.getspectrum(ii))
@@ -179,16 +200,23 @@ def cluster(imzml_fn, imzml_out_fn, imzb_fn = "./tmp.imzb", cluster_ppm = 0.2):
             imzml_out.addSpectrum(centroid_mzs, counts[1::2], coords=(c[0], c[1], 1))
     print(ii)
 
-def pipeline(imzml_fn, imzml_recal_fn, config, metadata, tmp_fn = "tmp.imzML", ppm_flag=True, align_flag=True, dump_fn=None):
+def pipeline(imzml_fn, imzml_recal_fn,
+             config, metadata,
+             max_shift=0.005,
+             tmp_fn = "tmp.imzML",
+             ppm_flag=True, align_flag=True,
+             dump_fn=None,
+             ims_path="ims"):
 #    config = json.load(open('../metaspace_es_config.json'))
+#
     if align_flag:
-        align(imzml_fn, tmp_fn, ppm_flag)
+        align(imzml_fn, tmp_fn, ppm_flag, max_shift)
     else:
         # spoof the alignment
         subprocess.check_call(["cp", imzml_fn, tmp_fn])
         subprocess.check_call(["cp", imzml_fn.replace('.imzML','.ibd'), tmp_fn.replace('.imzML','.ibd')])
 
-    cluster(tmp_fn, tmp_fn.replace(".imzML", "_cl.imzML"), tmp_fn.replace(".imzML", ".imzb"))
+    cluster(tmp_fn, tmp_fn.replace(".imzML", "_cl.imzML"), tmp_fn.replace(".imzML", ".imzb"), ims_path=ims_path)
     ref_mzs = pd.concat(
             get_reference_mzs(polarity=metadata['polarity'], tissue_type=metadata['organ'],
                               source=metadata['source'], database=metadata['database'],
